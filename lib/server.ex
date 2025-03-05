@@ -25,9 +25,12 @@ defmodule Server do
 
   defp serve(client) do
     case :gen_tcp.recv(client, 0) do
-      {:ok, data} ->
-        Logger.info("Received: #{data}")
-        write_line(data, client)
+      {:ok, line} ->
+        line
+        |> parse_line()
+        |> handle_command()
+        |> write_line(client)
+
         serve(client)
 
       {:error, :closed} ->
@@ -38,8 +41,20 @@ defmodule Server do
     end
   end
 
-  defp write_line(_line, client) do
-    # Hardcode for now per instuctions
-    :gen_tcp.send(client, "+PONG\r\n")
+  defp parse_line(line) do
+    parsed = String.split(line, "\r\n", trim: true)
+    Logger.info("Parsed: #{inspect(parsed)}")
+    parsed
+  end
+
+  defp handle_command([_, _, "ECHO", length, msg]) do
+    "#{length}\r\n#{msg}\r\n"
+  end
+
+  defp handle_command([_, _, "PING"]), do: "+PONG\r\n"
+  defp handle_command(_), do: "Err: unknown command\r\n"
+
+  defp write_line(line, client) do
+    :gen_tcp.send(client, line)
   end
 end
