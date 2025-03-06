@@ -36,7 +36,6 @@ defmodule Redis do
       {:ok, line} ->
         line
         |> Protocol.parse_message()
-        |> IO.inspect()
         |> handle_command()
         |> write_line(client)
 
@@ -50,25 +49,28 @@ defmodule Redis do
     end
   end
 
-  defp handle_command({:ok, %Command{command: "SET"} = command}) do
-    [key, val] = command.args
+  defp handle_command({:ok, %Command{command: "SET", args: [key, val]}}) do
     Storage.set_val(key, val)
     Protocol.ok()
   end
 
-  defp handle_command({:ok, %Command{command: "GET"} = command}) do
-    [key] = command.args
+  defp handle_command({:ok, %Command{command: "SET", args: [key, val, "px", expiry]}}) do
+    Storage.set_val(key, val, String.to_integer(expiry))
+    Protocol.ok()
+  end
 
-    case Storage.get_val(key) do
-      [] -> Protocol.bulk_string("")
-      [{_, val}] -> Protocol.bulk_string(val)
+  defp handle_command({:ok, %Command{command: "GET", args: [key]}}) do
+    val = Storage.get_val(key)
+    Logger.debug(storage_get: val)
+
+    case val do
+      nil -> Protocol.null_bulk_string()
+      {_, val} -> Protocol.bulk_string(val)
     end
   end
 
-  defp handle_command({:ok, %Command{command: "ECHO"} = command}) do
-    [msg] = command.args
-    Protocol.bulk_string(msg)
-  end
+  defp handle_command({:ok, %Command{command: "ECHO", args: [msg]}}),
+    do: Protocol.bulk_string(msg)
 
   defp handle_command({:ok, %Command{command: "PING"}}), do: Protocol.pong()
 

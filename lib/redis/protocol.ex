@@ -22,14 +22,18 @@ defmodule Redis.Protocol do
   On failure, returns {:error, :<error_type>}
   """
   def parse_message(message) do
-    Logger.info(parser_message: message)
+    Logger.debug(parser_message: message)
 
-    case message do
-      "*" <> rest -> parse_array_string(rest)
-      "$" <> rest -> parse_bulk_string(rest)
-      "+" <> rest -> parse_simple_string(rest)
-      _ -> {:error, :unknown_message_type}
-    end
+    command =
+      case message do
+        "*" <> rest -> parse_array_string(rest)
+        "$" <> rest -> parse_bulk_string(rest)
+        "+" <> rest -> parse_simple_string(rest)
+        _ -> {:error, :unknown_message_type}
+      end
+
+    Logger.debug(parsed_command: command)
+    command
   end
 
   defp parse_array_string(rest) do
@@ -89,4 +93,6 @@ defmodule Redis.Protocol do
   def bulk_string(msg) do
     "$#{String.length(msg)}\r\n#{msg}\r\n"
   end
+
+  def null_bulk_string, do: "$-1\r\n"
 end
