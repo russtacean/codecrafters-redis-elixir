@@ -21,25 +21,25 @@ defmodule Redis.Protocol do
   On success, returns {:ok, %Redis.Command{}}
   On failure, returns {:error, :<error_type>}
   """
-  def parse_message(message) do
-    Logger.debug(parser_message: message)
+  def decode(message) do
+    Logger.debug(raw_message: message)
 
     command =
       case message do
-        "*" <> rest -> parse_array_string(rest)
-        "$" <> rest -> parse_bulk_string(rest)
-        "+" <> rest -> parse_simple_string(rest)
+        "*" <> rest -> decode_array_string(rest)
+        "$" <> rest -> decode_encode_bulk_string(rest)
+        "+" <> rest -> decode_simple_string(rest)
         _ -> {:error, :unknown_message_type}
       end
 
-    Logger.debug(parsed_command: command)
+    Logger.debug(decoded: command)
     command
   end
 
-  defp parse_array_string(rest) do
+  defp decode_array_string(rest) do
     [count, rest] = String.split(rest, @clrf, parts: 2)
     count = String.to_integer(count)
-    parsed_array = parse_array(count, rest, [])
+    parsed_array = decode_array(count, rest, [])
 
     case parsed_array do
       {:ok, args} ->
@@ -51,48 +51,75 @@ defmodule Redis.Protocol do
     end
   end
 
-  defp parse_array(0, _data, acc), do: {:ok, Enum.reverse(acc)}
+  defp decode_array(0, _data, acc), do: {:ok, Enum.reverse(acc)}
 
-  defp parse_array(count, data, acc) do
+  defp decode_array(count, data, acc) do
     case data do
       "$" <> rest ->
         [length, remainder] = String.split(rest, @clrf, parts: 2)
         length = String.to_integer(length)
         {array_element, rest} = String.split_at(remainder, length)
         rest = String.trim_leading(rest, @clrf)
-        parse_array(count - 1, rest, [array_element | acc])
+        decode_array(count - 1, rest, [array_element | acc])
 
       _ ->
         {:error, :invalid_protocol}
     end
   end
 
-  defp parse_bulk_string(rest) do
+  defp decode_encode_bulk_string(rest) do
     [length, rest] = String.split(rest, @clrf, parts: 2)
     length = String.to_integer(length)
     {msg, _} = String.split_at(rest, length)
     {:ok, %Command{command: "", args: [msg]}}
   end
 
-  defp parse_simple_string(rest) do
+  defp decode_simple_string(rest) do
     command = String.trim_trailing(rest, @clrf)
     {:ok, %Command{command: command, args: []}}
   end
 
-  def simple_string(msg) do
+  @doc """
+  Encodes a value into the Redis protocol format.
+
+  Simple responses should use atoms, such as :ok, :pong, etc.
+  Strings will be encoded as RESP bulk strings.
+  Lists will be encoded as RESP arrays, where each element will be encoded in turn.
+  {:error, "reason"} will be encoded as a simple error message.
+  """
+  def encode(nil), do: "$-1\r\n"
+  def encode(atom) when is_atom(atom), do: encode_simple_string(atom)
+  def encode(string) when is_binary(string), do: encode_bulk_string(string)
+  def encode(list) when is_list(list), do: encode_array(list)
+  def encode({:error, reason}), do: encode_simple_error(reason)
+
+  defp encode_simple_string(atom) do
+    msg =
+      atom
+      |> Atom.to_string()
+      |> String.upcase()
+
     "+#{msg}\r\n"
   end
 
-  def pong, do: simple_string("PONG")
-  def ok, do: simple_string("OK")
-
-  def error_response(reason) do
+  defp encode_simple_error(reason) do
     "-ERR: #{reason}\r\n"
   end
 
-  def bulk_string(msg) do
+  defp encode_bulk_string(msg) do
     "$#{String.length(msg)}\r\n#{msg}\r\n"
   end
 
-  def null_bulk_string, do: "$-1\r\n"
+  defp encode_array([]) do
+    "*0\r\n"
+  end
+
+  defp encode_array(list) do
+    encoded_elements =
+      list
+      |> Enum.map(&encode(&1))
+      |> Enum.join()
+
+    "*#{length(list)}\r\n#{encoded_elements}"
+  end
 end

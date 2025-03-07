@@ -1,8 +1,8 @@
 defmodule Redis do
-  alias Redis.Command
-  alias Redis.Protocol
-  alias Redis.Storage
   require Logger
+
+  alias Redis.Commands
+  alias Redis.Protocol
 
   @moduledoc """
   Your implementation of a Redis server
@@ -12,7 +12,8 @@ defmodule Redis do
 
   def start(_type, _args) do
     children = [
-      Storage,
+      Redis.Config,
+      Redis.Storage,
       {Task, fn -> Redis.listen() end}
     ]
 
@@ -35,8 +36,9 @@ defmodule Redis do
     case :gen_tcp.recv(client, 0) do
       {:ok, line} ->
         line
-        |> Protocol.parse_message()
-        |> handle_command()
+        |> Protocol.decode()
+        |> Commands.execute()
+        |> Protocol.encode()
         |> write_line(client)
 
         serve(client)
@@ -48,37 +50,6 @@ defmodule Redis do
         Logger.error("Error: #{reason}")
     end
   end
-
-  defp handle_command({:ok, %Command{command: "SET", args: [key, val]}}) do
-    Storage.set_val(key, val)
-    Protocol.ok()
-  end
-
-  defp handle_command({:ok, %Command{command: "SET", args: [key, val, "px", expiry]}}) do
-    Storage.set_val(key, val, String.to_integer(expiry))
-    Protocol.ok()
-  end
-
-  defp handle_command({:ok, %Command{command: "GET", args: [key]}}) do
-    val = Storage.get_val(key)
-    Logger.debug(storage_get: val)
-
-    case val do
-      nil -> Protocol.null_bulk_string()
-      {_, val} -> Protocol.bulk_string(val)
-    end
-  end
-
-  defp handle_command({:ok, %Command{command: "ECHO", args: [msg]}}),
-    do: Protocol.bulk_string(msg)
-
-  defp handle_command({:ok, %Command{command: "PING"}}), do: Protocol.pong()
-
-  defp handle_command({:error, :invalid_protocol}),
-    do: Protocol.error_response("Invalid protocol")
-
-  defp handle_command({:error, :unknown_message_type}),
-    do: Protocol.error_response("Unknown message type")
 
   defp write_line(line, client) do
     Logger.info(sent_message: line)
