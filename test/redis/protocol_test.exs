@@ -52,6 +52,10 @@ defmodule Redis.ProtocolTest do
     assert Redis.Protocol.encode("foobar") == "$6\r\nfoobar\r\n"
   end
 
+  test "Encode array" do
+    assert Redis.Protocol.encode(["foo", "bar"]) == "*2\r\n$3\r\nfoo\r\n$3\r\nbar\r\n"
+  end
+
   test "Encode simple error" do
     assert Redis.Protocol.encode({:error, "Test error"}) == "-ERR: Test error\r\n"
   end
