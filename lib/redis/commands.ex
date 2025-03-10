@@ -2,12 +2,9 @@ defmodule Redis.Commands do
   require Logger
 
   alias Redis.Command
-  alias Redis.Config
   alias Redis.Storage
 
   def execute({:ok, %Command{command: "PING"}}), do: :pong
-
-  def execute({:ok, %Command{command: "SET", args: args}}), do: set_command(args)
 
   def execute({:ok, %Command{command: "GET", args: [key]}}) do
     val = Storage.get_val(key)
@@ -41,6 +38,25 @@ defmodule Redis.Commands do
     {:error, err_msg}
   end
 
+  def execute({:ok, %Command{command: "SET", args: args}}), do: set_command(args)
+
+  def execute({:ok, %Command{command: "KEYS", args: args}}) do
+    [pattern] = args
+    pattern = String.replace(pattern, "*", ".*")
+    Logger.debug(keys_pattern: pattern)
+
+    try do
+      all_keys = Redis.DB.keys!()
+
+      case args do
+        ["*"] -> all_keys
+        _ -> Enum.filter(all_keys, &String.match?(&1, ~r/#{pattern}/))
+      end
+    rescue
+      error -> {:error, "Error fetching keys: #{error}"}
+    end
+  end
+
   defp set_command([key, val]) do
     Storage.set_val(key, val)
     :ok
@@ -51,6 +67,6 @@ defmodule Redis.Commands do
     :ok
   end
 
-  defp get_config(["dir"]), do: ["dir", Config.get_dir()]
-  defp get_config(["dbfilename"]), do: ["dbfilename", Config.get_dbfilename()]
+  defp get_config(["dir"]), do: ["dir", Redis.DB.get_dir()]
+  defp get_config(["dbfilename"]), do: ["dbfilename", Redis.DB.get_dbfilename()]
 end

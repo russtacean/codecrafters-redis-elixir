@@ -30,6 +30,20 @@ defmodule Redis.ProtocolTest do
     assert command == %Redis.Command{command: "CONFIG", args: ["GET", "dir"]}
   end
 
+  test "Decode array: KEYS wildcard" do
+    {:ok, command} =
+      Redis.Protocol.decode("*2\r\n$4\r\nKEYS\r\n$1\r\n*\r\n")
+
+    assert command == %Redis.Command{command: "KEYS", args: ["*"]}
+  end
+
+  test "Decode array: KEYS multiple" do
+    {:ok, command} =
+      Redis.Protocol.decode("*3\r\n$4\r\nKEYS\r\n$3\r\nfoo\r\n$3\r\nbar\r\n")
+
+    assert command == %Redis.Command{command: "KEYS", args: ["foo", "bar"]}
+  end
+
   test "Error: unknown message type" do
     # Improper carriage return after key
     {:error, :unknown_message_type} =
