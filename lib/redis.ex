@@ -14,6 +14,7 @@ defmodule Redis do
     children = [
       Redis.Config,
       Redis.Storage,
+      Redis.RDB,
       {Task, fn -> Redis.listen() end}
     ]
 

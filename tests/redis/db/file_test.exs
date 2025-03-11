@@ -1,9 +1,9 @@
-defmodule Redis.DB.FileTest do
+defmodule Redis.RDB.FileTest do
   use ExUnit.Case, async: true
 
   defp load_rdb(file_name) do
     path = Path.join([File.cwd!(), "tests/fixtures", file_name])
-    Redis.DB.File.open!(path)
+    Redis.RDB.File.open!(path)
   end
 
   test "Load basic key/value file" do

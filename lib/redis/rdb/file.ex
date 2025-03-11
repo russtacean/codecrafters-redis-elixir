@@ -1,4 +1,4 @@
-defmodule Redis.DB.File do
+defmodule Redis.RDB.File do
   @moduledoc """
   Provides functions for reading and writing RDB files.
   See https://rdb.fnordig.de/file_format.html for details on the RDB file format.
@@ -23,9 +23,34 @@ defmodule Redis.DB.File do
     # TODO Implement other types
   }
 
+  def empty_file() do
+    %__MODULE__{
+      version: 1,
+      metadata: %{},
+      database: %{
+        stats: %{},
+        kv_store: %{}
+      }
+    }
+  end
+
   def keys(db_file) do
     db_file.database.kv_store
     |> Map.keys()
+  end
+
+  def set_val(db_file, key, val, expiry) do
+    kv_store = db_file.database.kv_store
+    kv_store = Map.put(kv_store, key, {val, expiry})
+    db_file = Map.put(db_file, :kv_store, kv_store)
+    db_file
+  end
+
+  def get_val(db_file, key) do
+    Logger.debug(db_file: db_file)
+
+    db_file.database.kv_store
+    |> Map.get(key)
   end
 
   def open!(path) do
@@ -167,11 +192,13 @@ defmodule Redis.DB.File do
   defp parse_val_type!(<<val_type::size(8), rest::binary>>) do
     case Map.fetch(@val_types, val_type) do
       {:ok, parsed_type} -> {parsed_type, rest}
-      {:error, _} -> raise "Invalid value type"
+      :error -> raise "Invalid value type"
     end
   end
 
   defp parse_value!(:string, bytes), do: decode_string!(bytes)
 
   # TODO: Implement other value types
+
+  # TODO: Encode file
 end

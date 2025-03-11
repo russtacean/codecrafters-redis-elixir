@@ -54,7 +54,7 @@ defmodule Redis.Storage do
     end
   end
 
-  defp check_expiry({key, val, expiry}) do
+  def check_expiry({key, val, expiry}) do
     cond do
       expiry == nil -> {key, val}
       expiry > :os.system_time(:millisecond) -> {key, val}

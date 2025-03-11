@@ -3,6 +3,7 @@ defmodule Redis.Commands do
 
   alias Redis.Command
   alias Redis.Storage
+  alias Redis.RDB
 
   def execute({:ok, %Command{command: "PING"}}), do: :pong
 
@@ -11,8 +12,23 @@ defmodule Redis.Commands do
     Logger.debug(storage_get: val)
 
     case val do
-      nil -> nil
-      {_, val} -> val
+      nil ->
+        case RDB.get_val(key) do
+          nil ->
+            Logger.debug(rdb_miss: key)
+            nil
+
+          {val, expiry} ->
+            Logger.debug(rdb_get: {key, val, expiry})
+            Storage.set_val(key, val, expiry)
+
+            # Handle expiry via storage, might have slight edge case with timing, but good enough for now
+            {_, val} = Storage.get_val(key)
+            val
+        end
+
+      {_, val} ->
+        val
     end
   end
 
@@ -46,7 +62,7 @@ defmodule Redis.Commands do
     Logger.debug(keys_pattern: pattern)
 
     try do
-      all_keys = Redis.DB.keys!()
+      all_keys = Redis.RDB.keys()
 
       case args do
         ["*"] -> all_keys
@@ -67,6 +83,6 @@ defmodule Redis.Commands do
     :ok
   end
 
-  defp get_config(["dir"]), do: ["dir", Redis.DB.get_dir()]
-  defp get_config(["dbfilename"]), do: ["dbfilename", Redis.DB.get_dbfilename()]
+  defp get_config(["dir"]), do: ["dir", Redis.RDB.get_dir()]
+  defp get_config(["dbfilename"]), do: ["dbfilename", Redis.RDB.get_dbfilename()]
 end
