@@ -26,7 +26,8 @@ defmodule Redis.Replication.Info do
   defp get_role do
     case Redis.Config.get_replicaof() do
       nil -> "role:master"
-      [_host, _port] -> "role:slave"
+      {host, port} when is_binary(host) and is_integer(port) -> "role:slave"
+      _ -> "role:master"
     end
   end
 

@@ -44,8 +44,12 @@ defmodule Redis.Config do
     replicaof = Agent.get(__MODULE__, fn state -> state.replicaof end)
 
     case replicaof do
-      nil -> nil
-      _ -> String.split(replicaof, " ")
+      nil ->
+        nil
+
+      _ ->
+        [host, port] = String.split(replicaof, " ")
+        {host, String.to_integer(port)}
     end
   end
 end
