@@ -113,14 +113,16 @@ defmodule Redis.RDB.File do
         Logger.debug(db_resize: database)
         decode_database!(rest, db_file, database)
 
-      <<@db_kv_expiry_seconds, timestamp_s::little-integer-size(64), 0, rest::binary>> ->
-        expiry = DateTime.from_unix(timestamp_s, :second)
-        {database, rest} = parse_db_kv!(rest, expiry, database)
+      <<@db_kv_expiry_seconds, expiry_s::little-integer-size(32), rest::binary>> ->
+        Logger.debug(expiry_s: expiry_s)
+        {database, rest} = parse_db_kv!(rest, expiry_s, database)
+        Logger.debug(parsed_db_kv_expiry_s: database)
         decode_database!(rest, db_file, database)
 
-      <<@db_kv_expiry_ms, timestamp_ms::little-integer-size(32), 0, rest::binary>> ->
-        expiry = DateTime.from_unix(timestamp_ms, :millisecond)
-        {database, rest} = parse_db_kv!(rest, expiry, database)
+      <<@db_kv_expiry_ms, expiry_ms::little-integer-size(64), rest::binary>> ->
+        Logger.debug(expiry_ms: expiry_ms)
+        {database, rest} = parse_db_kv!(rest, expiry_ms / 1000, database)
+        Logger.debug(parsed_db_kv_expiry_ms: database)
         decode_database!(rest, db_file, database)
 
       <<@db_end::size(8), _::binary>> ->
@@ -131,6 +133,7 @@ defmodule Redis.RDB.File do
 
       _ ->
         {database, rest} = parse_db_kv!(bytes, nil, database)
+        Logger.debug(parsed_db_kv: database)
         decode_database!(rest, db_file, database)
     end
   end
@@ -178,21 +181,25 @@ defmodule Redis.RDB.File do
     end
   end
 
-  defp parse_db_kv!(bytes, expiry, database_map) do
+  defp parse_db_kv!(bytes, expiry_s, database_map) do
     {val_type, rest} = parse_val_type!(bytes)
     {key, rest} = decode_string!(rest)
     {value, rest} = parse_value!(val_type, rest)
 
     kv_store = database_map.kv_store
-    kv_store = Map.put(kv_store, key, {value, expiry})
+    kv_store = Map.put(kv_store, key, {value, expiry_s})
     database_map = Map.put(database_map, :kv_store, kv_store)
     {database_map, rest}
   end
 
   defp parse_val_type!(<<val_type::size(8), rest::binary>>) do
     case Map.fetch(@val_types, val_type) do
-      {:ok, parsed_type} -> {parsed_type, rest}
-      :error -> raise "Invalid value type"
+      {:ok, parsed_type} ->
+        {parsed_type, rest}
+
+      :error ->
+        Logger.error(unknown_val_type: val_type)
+        raise "Invalid value type: #{val_type}"
     end
   end
 

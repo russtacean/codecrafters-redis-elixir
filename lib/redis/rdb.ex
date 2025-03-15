@@ -1,5 +1,6 @@
 defmodule Redis.RDB do
   use GenServer
+  require Logger
 
   @impl GenServer
   def init(_) do
@@ -9,9 +10,12 @@ defmodule Redis.RDB do
       rdb_file =
         Redis.RDB.File.open!("#{Redis.Config.get_dir()}/#{Redis.Config.get_dbfilename()}")
 
+      Logger.info(loaded_rdb: rdb_file)
       {:ok, rdb_file}
     rescue
-      _ -> {:ok, Redis.RDB.File.empty_file()}
+      error ->
+        Logger.error(rdb_error: error)
+        {:ok, Redis.RDB.File.empty_file()}
     end
   end
 
@@ -36,7 +40,30 @@ defmodule Redis.RDB do
   end
 
   def get_val(key) do
-    GenServer.call(__MODULE__, {:get_val, key})
+    val = GenServer.call(__MODULE__, {:get_val, key})
+
+    case val do
+      nil ->
+        nil
+
+      {val, expiry_s} ->
+        if is_expired(expiry_s) do
+          nil
+        else
+          {val, expiry_sec_to_ttl(expiry_s)}
+        end
+    end
+  end
+
+  defp is_expired(expiry_seconds) do
+    expiry_seconds < :os.system_time(:second)
+  end
+
+  defp expiry_sec_to_ttl(expiry_seconds) do
+    case expiry_seconds do
+      nil -> nil
+      expiry_seconds -> expiry_seconds - :os.system_time(:second)
+    end
   end
 
   @impl GenServer

@@ -9,7 +9,7 @@ defmodule Redis.Commands do
 
   def execute({:ok, %Command{command: "GET", args: [key]}}) do
     val = Storage.get_val(key)
-    Logger.debug(storage_get: val)
+    Logger.info(storage_get: val)
 
     case val do
       nil ->
@@ -19,11 +19,8 @@ defmodule Redis.Commands do
             nil
 
           {val, expiry} ->
-            Logger.debug(rdb_get: {key, val, expiry})
+            Logger.info(rdb_get: {key, val, expiry}, sys_time: :os.system_time(:millisecond))
             Storage.set_val(key, val, expiry)
-
-            # Handle expiry via storage, might have slight edge case with timing, but good enough for now
-            {_, val} = Storage.get_val(key)
             val
         end
 

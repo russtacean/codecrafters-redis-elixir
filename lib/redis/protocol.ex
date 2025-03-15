@@ -32,7 +32,7 @@ defmodule Redis.Protocol do
         _ -> {:error, :unknown_message_type}
       end
 
-    Logger.debug(decoded: command)
+    Logger.info(decoded: command)
     command
   end
 
