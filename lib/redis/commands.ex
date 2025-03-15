@@ -93,5 +93,5 @@ defmodule Redis.Commands do
   defp get_config(["dir"]), do: ["dir", Redis.RDB.get_dir()]
   defp get_config(["dbfilename"]), do: ["dbfilename", Redis.RDB.get_dbfilename()]
 
-  defp get_replication_info([]), do: "role:master"
+  defp get_replication_info([]), do: Redis.Config.get_replication_info()
 end
