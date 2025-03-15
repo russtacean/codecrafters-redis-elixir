@@ -5,7 +5,7 @@ defmodule Redis do
   alias Redis.Protocol
 
   @moduledoc """
-  Your implementation of a Redis server
+  Implementation of a subset of Redis server functionality
   """
 
   use Application
@@ -22,7 +22,9 @@ defmodule Redis do
   end
 
   def listen() do
-    {:ok, socket} = :gen_tcp.listen(6379, [:binary, active: false, reuseaddr: true])
+    {:ok, socket} =
+      :gen_tcp.listen(Redis.Config.get_port(), [:binary, active: false, reuseaddr: true])
+
     accept_loop(socket)
   end
 

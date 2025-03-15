@@ -3,19 +3,22 @@ defmodule Redis.Config do
 
   require Logger
 
-  @options [dir: :string, dbfilename: :string]
+  @options [dir: :string, dbfilename: :string, port: :integer]
   @default_dir "/tmp"
   @default_file_name "dump.rdb"
+  @default_port 6379
 
   def start_link(_) do
     args = System.argv()
     {parsed_options, _, _} = OptionParser.parse(args, strict: @options)
     directory = Keyword.get(parsed_options, :dir, @default_dir)
     dbfilename = Keyword.get(parsed_options, :dbfilename, @default_file_name)
+    port = Keyword.get(parsed_options, :port, @default_port)
 
     state = %{
       dir: directory,
-      dbfilename: dbfilename
+      dbfilename: dbfilename,
+      port: port
     }
 
     Logger.debug(initial_config: state)
@@ -28,5 +31,9 @@ defmodule Redis.Config do
 
   def get_dbfilename do
     Agent.get(__MODULE__, fn state -> state.dbfilename end)
+  end
+
+  def get_port do
+    Agent.get(__MODULE__, fn state -> state.port end)
   end
 end
