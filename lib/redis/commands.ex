@@ -44,8 +44,13 @@ defmodule Redis.Commands do
     Logger.debug(info_subcommand: {subcommand, rest})
 
     case String.upcase(subcommand) do
-      "REPLICATION" -> get_replication_info(rest)
-      _ -> {:error, "Invalid INFO subcommand"}
+      "REPLICATION" ->
+        info = Redis.Replication.get_replication_info()
+        Logger.info(replication_info: info)
+        info
+
+      _ ->
+        {:error, "Invalid INFO subcommand"}
     end
   end
 
@@ -92,6 +97,4 @@ defmodule Redis.Commands do
 
   defp get_config(["dir"]), do: ["dir", Redis.RDB.get_dir()]
   defp get_config(["dbfilename"]), do: ["dbfilename", Redis.RDB.get_dbfilename()]
-
-  defp get_replication_info([]), do: Redis.Config.get_replication_info()
 end

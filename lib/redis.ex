@@ -13,6 +13,7 @@ defmodule Redis do
   def start(_type, _args) do
     children = [
       Redis.Config,
+      Redis.Replication,
       Redis.Storage,
       Redis.RDB,
       {Task, fn -> Redis.listen() end}

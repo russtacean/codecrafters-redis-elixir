@@ -40,18 +40,7 @@ defmodule Redis.Config do
     Agent.get(__MODULE__, fn state -> state.port end)
   end
 
-  def get_replication_info do
-    role =
-      case get_replicaof() do
-        nil -> "role:master"
-        [_host, _port] -> "role:slave"
-      end
-
-    Logger.info(replication_info: role)
-    role
-  end
-
-  defp get_replicaof do
+  def get_replicaof do
     replicaof = Agent.get(__MODULE__, fn state -> state.replicaof end)
 
     case replicaof do
