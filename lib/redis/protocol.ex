@@ -95,13 +95,17 @@ defmodule Redis.Protocol do
   def encode({:error, reason}), do: encode_simple_error(reason)
   def encode(%Command{} = command), do: encode_command(command)
 
-  defp encode_simple_string(atom) do
+  defp encode_simple_string(atom) when is_atom(atom) do
     msg =
       atom
       |> Atom.to_string()
       |> String.upcase()
 
     "+#{msg}\r\n"
+  end
+
+  defp encode_simple_string(string) when is_binary(string) do
+    "+#{string}\r\n"
   end
 
   defp encode_simple_error(reason) do
@@ -127,6 +131,11 @@ defmodule Redis.Protocol do
 
   defp encode_command(%Command{command: "PING"}) do
     encode(["PING"])
+  end
+
+  defp encode_command(%Command{command: "FULLRESYNC", args: args}) do
+    [replication_id, offset] = args
+    encode_simple_string("FULLRESYNC #{replication_id} #{offset}")
   end
 
   defp encode_command(%Command{command: command, args: args}) do

@@ -82,20 +82,42 @@ defmodule Redis.Replication.Master do
   defp send_fullsync(socket) do
     case recv_command(socket) do
       {:ok, %Redis.Command{command: "PSYNC", args: ["?", "-1"]}} ->
+        Logger.info("Received initial PSYNC request from replica")
         replication_id = Info.generate_replid()
         offset = "0"
 
+        Logger.info("Initiating FULLRESYNC",
+          replication_id: replication_id,
+          offset: offset
+        )
+
         response =
-          Protocol.encode(%Command{command: "FULLRESYNC", args: [replication_id, offset]})
+          Protocol.encode(%Command{
+            command: "FULLRESYNC",
+            args: [replication_id, offset]
+          })
 
         case :gen_tcp.send(socket, response) do
-          :ok -> :ok
-          {:error, reason} -> {:error, reason}
+          :ok ->
+            Logger.info("Successfully sent FULLRESYNC response")
+            :ok
+
+          {:error, reason} = error ->
+            Logger.error("Failed to send FULLRESYNC response", error: reason)
+            error
         end
 
-      other ->
-        Logger.error(unexpected_psync_command: other)
+      {:ok, %Redis.Command{command: "PSYNC"} = cmd} ->
+        Logger.error("Received unexpected PSYNC format", command: cmd)
+        {:error, :invalid_psync_format}
+
+      {:ok, other_command} ->
+        Logger.error("Expected PSYNC command but received", command: other_command)
         {:error, :unexpected_command}
+
+      {:error, reason} = error ->
+        Logger.error("Failed to receive PSYNC command", error: reason)
+        error
     end
   end
 
