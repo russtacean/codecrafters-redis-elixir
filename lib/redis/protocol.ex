@@ -123,11 +123,15 @@ defmodule Redis.Protocol do
     "*#{length(list)}\r\n#{encoded_elements}"
   end
 
-  def ping_request do
+  def ok do
+    encode(:ok)
+  end
+
+  def ping do
     encode(["PING"])
   end
 
-  def pong_response do
+  def pong do
     encode(:pong)
   end
 end

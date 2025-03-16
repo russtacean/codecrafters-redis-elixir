@@ -8,48 +8,98 @@ defmodule Redis.Replication.Replica do
 
     host = String.to_charlist(host)
 
-    case :gen_tcp.connect(host, port, [
-           :binary,
-           active: false
-         ]) do
+    case :gen_tcp.connect(host, port, [:binary, active: false]) do
       {:ok, socket} ->
         Logger.info("Connected to master at #{host}:#{port}")
-        send_ping(socket)
+
+        with {:ok, _} <- handshake_ping(socket),
+             {:ok, _} <- handshake_replconf(socket),
+             {:ok, socket, repl_id, offset} <- handshake_psync(socket) do
+          {:ok, socket, repl_id, offset}
+        end
 
       {:error, reason} ->
-        Logger.error("Failed to connect to master: #{inspect(reason)}")
+        Logger.error(master_connect_failed: reason)
         {:error, reason}
     end
   end
 
-  defp send_ping(socket) do
-    ping_request = Protocol.ping_request()
+  defp handshake_ping(socket) do
+    Logger.info("Sending PING to master")
+    send_and_receive(socket, Protocol.ping(), Protocol.pong())
+  end
 
-    case :gen_tcp.send(socket, ping_request) do
+  defp handshake_replconf(socket) do
+    port = Redis.Config.get_port()
+    ok_msg = Protocol.ok()
+
+    # Send listening port
+    with {:ok, _} <-
+           send_and_receive(
+             socket,
+             Protocol.encode(["REPLCONF", "listening-port", Integer.to_string(port)]),
+             ok_msg
+           ),
+         Logger.info("REPLCONF listening-port acknowledged"),
+         # Send capabilities
+         {:ok, _} <-
+           send_and_receive(
+             socket,
+             Protocol.encode(["REPLCONF", "capa", "eof", "capa", "psync2"]),
+             ok_msg
+           ) do
+      Logger.info("REPLCONF capabilities acknowledged")
+      {:ok, socket}
+    end
+  end
+
+  defp handshake_psync(socket) do
+    Logger.info("Sending PSYNC command to master")
+    psync_cmd = Protocol.encode(["PSYNC", "?", "-1"])
+
+    case send_and_receive(socket, psync_cmd) do
+      {:ok, response} ->
+        case Protocol.decode(response) do
+          {:ok, %Redis.Command{command: "FULLRESYNC", args: [replication_id, offset]}} ->
+            Logger.info("Received FULLRESYNC from master",
+              replication_id: replication_id,
+              offset: offset
+            )
+
+            {:ok, socket, replication_id, String.to_integer(offset)}
+
+          other ->
+            Logger.error(fullresync_unexpected_response: other)
+            {:error, :unexpected_response}
+        end
+
+      error ->
+        error
+    end
+  end
+
+  # Private helper for send + receive with expected response
+  defp send_and_receive(socket, command, expected_response \\ nil) do
+    case :gen_tcp.send(socket, command) do
       :ok ->
-        Logger.info("Sent PING to master")
-        receive_pong(socket)
+        case :gen_tcp.recv(socket, 0) do
+          {:ok, ^expected_response} when not is_nil(expected_response) ->
+            {:ok, expected_response}
+
+          {:ok, response} when is_nil(expected_response) ->
+            {:ok, response}
+
+          {:ok, other} ->
+            Logger.error(unexpected_response: other)
+            {:error, :unexpected_response}
+
+          {:error, reason} ->
+            Logger.error(receive_failed: reason)
+            {:error, reason}
+        end
 
       {:error, reason} ->
-        Logger.error("Failed to send PING: #{inspect(reason)}")
-        {:error, reason}
-    end
-  end
-
-  defp receive_pong(socket) do
-    pong_response = Protocol.pong_response()
-
-    case :gen_tcp.recv(socket, 0) do
-      {:ok, ^pong_response} ->
-        Logger.info("Received PONG from master")
-        {:ok, socket}
-
-      {:ok, other} ->
-        Logger.error("Unexpected response from master: #{inspect(other)}")
-        {:error, :unexpected_response}
-
-      {:error, reason} ->
-        Logger.error("Failed to receive PONG: #{inspect(reason)}")
+        Logger.error(send_failed: reason)
         {:error, reason}
     end
   end
