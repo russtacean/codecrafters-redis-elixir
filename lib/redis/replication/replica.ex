@@ -1,6 +1,7 @@
 defmodule Redis.Replication.Replica do
   require Logger
 
+  alias Redis.Command
   alias Redis.Protocol
 
   def start_handshake(host, port) do
@@ -37,7 +38,10 @@ defmodule Redis.Replication.Replica do
     with {:ok, _} <-
            send_and_receive(
              socket,
-             Protocol.encode(["REPLCONF", "listening-port", Integer.to_string(port)]),
+             Protocol.encode(%Command{
+               command: "REPLCONF",
+               args: ["listening-port", Integer.to_string(port)]
+             }),
              ok_msg
            ),
          Logger.info("REPLCONF listening-port acknowledged"),
@@ -45,7 +49,10 @@ defmodule Redis.Replication.Replica do
          {:ok, _} <-
            send_and_receive(
              socket,
-             Protocol.encode(["REPLCONF", "capa", "eof", "capa", "psync2"]),
+             Protocol.encode(%Command{
+               command: "REPLCONF",
+               args: ["capa", "eof", "capa", "psync2"]
+             }),
              ok_msg
            ) do
       Logger.info("REPLCONF capabilities acknowledged")

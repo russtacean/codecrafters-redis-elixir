@@ -6,6 +6,7 @@ defmodule Redis.Replication.Master do
 
   require Logger
 
+  alias Redis.Command
   alias Redis.Protocol
   alias Redis.Replication.Info
 
@@ -83,7 +84,9 @@ defmodule Redis.Replication.Master do
       {:ok, %Redis.Command{command: "PSYNC", args: ["?", "-1"]}} ->
         replication_id = Info.generate_replid()
         offset = "0"
-        response = Protocol.encode(["FULLRESYNC", replication_id, offset])
+
+        response =
+          Protocol.encode(%Command{command: "FULLRESYNC", args: [replication_id, offset]})
 
         case :gen_tcp.send(socket, response) do
           :ok -> :ok

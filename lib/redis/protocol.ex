@@ -86,12 +86,14 @@ defmodule Redis.Protocol do
   Strings will be encoded as RESP bulk strings.
   Lists will be encoded as RESP arrays, where each element will be encoded in turn.
   {:error, "reason"} will be encoded as a simple error message.
+  Command structs will be encoded as RESP arrays with command and args.
   """
   def encode(nil), do: "$-1\r\n"
   def encode(atom) when is_atom(atom), do: encode_simple_string(atom)
   def encode(string) when is_binary(string), do: encode_bulk_string(string)
   def encode(list) when is_list(list), do: encode_array(list)
   def encode({:error, reason}), do: encode_simple_error(reason)
+  def encode(%Command{} = command), do: encode_command(command)
 
   defp encode_simple_string(atom) do
     msg =
@@ -121,6 +123,15 @@ defmodule Redis.Protocol do
       |> Enum.join()
 
     "*#{length(list)}\r\n#{encoded_elements}"
+  end
+
+  defp encode_command(%Command{command: "PING"}) do
+    encode(["PING"])
+  end
+
+  defp encode_command(%Command{command: command, args: args}) do
+    [String.upcase(command) | args]
+    |> encode_array()
   end
 
   def ok do
