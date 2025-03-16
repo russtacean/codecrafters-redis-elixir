@@ -7,6 +7,16 @@ defmodule Redis.Replication.Info do
           master_repl_offset: integer()
         }
 
+  @doc """
+  Generates a new replication ID.
+  Returns a 40-character string that can be used as a replication ID.
+  """
+  @spec generate_replid() :: String.t()
+  def generate_replid do
+    :crypto.strong_rand_bytes(20)
+    |> Base.encode16(case: :lower)
+  end
+
   def from_config do
     role = get_role()
 
@@ -36,10 +46,5 @@ defmodule Redis.Replication.Info do
       "role:master" -> generate_replid()
       _ -> nil
     end
-  end
-
-  defp generate_replid do
-    # Generates a random 40 character string
-    :crypto.strong_rand_bytes(40) |> Base.url_encode64(padding: false)
   end
 end

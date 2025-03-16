@@ -29,6 +29,25 @@ defmodule Redis.Commands do
     end
   end
 
+  def execute({:ok, %Command{command: "REPLCONF", args: args}}) do
+    case args do
+      ["listening-port", port] ->
+        Logger.info("Received REPLCONF listening-port", port: port)
+        :ok
+
+      ["capa", "eof"] ->
+        Logger.info("Received REPLCONF capabilities: eof")
+        :ok
+
+      ["capa", "psync2"] ->
+        Logger.info("Received REPLCONF capabilities: psync2")
+        :ok
+
+      _ ->
+        {:error, "ERR Unknown REPLCONF subcommand or wrong number of arguments"}
+    end
+  end
+
   def execute({:ok, %Command{command: "CONFIG", args: args}}) do
     [subcommand | rest] = args
     Logger.debug(config_subcommand: {subcommand, rest})
