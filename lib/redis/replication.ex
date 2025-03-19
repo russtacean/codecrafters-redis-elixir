@@ -68,22 +68,11 @@ defmodule Redis.Replication do
   end
 
   @impl GenServer
-  def handle_call({:handle_replica_connection, socket}, _from, %{role: :master} = state) do
-    case Master.handle_replica_connection(socket) do
-      {:ok, replica_info} ->
-        new_state = put_in(state, [:replicas, socket], replica_info)
-        {:reply, :ok, new_state}
-
-      {:error, reason} = error ->
-        Logger.error("Failed to handle replica connection", error: reason)
-        {:reply, error, state}
-    end
-  end
-
   def handle_call({:handle_replica_connection, _socket}, _from, state) do
     {:reply, {:error, :not_master}, state}
   end
 
+  @impl GenServer
   def handle_call(:get_replication_info, _from, state) do
     info_string = Info.to_string(state.info)
     Logger.info(replication_info: info_string)

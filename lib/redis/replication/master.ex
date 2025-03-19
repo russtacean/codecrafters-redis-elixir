@@ -7,125 +7,58 @@ defmodule Redis.Replication.Master do
   require Logger
 
   alias Redis.Command
-  alias Redis.Protocol
-  alias Redis.Replication.Info
+  alias Redis.MultiResponse
 
-  @type replica_info :: %{
-          port: integer() | nil,
-          capabilities: list(atom())
-        }
+  def handle_replconf(args) do
+    case args do
+      ["listening-port", port] ->
+        Logger.info("Received REPLCONF listening-port", port: port)
+        :ok
 
-  @doc """
-  Handles an incoming replica connection and performs the replication handshake.
+      ["capa", "eof"] ->
+        Logger.info("Received REPLCONF capabilities: eof")
+        :ok
 
-  ## Parameters
-    * socket - The TCP socket connected to the replica
+      ["capa", "psync2"] ->
+        Logger.info("Received REPLCONF capabilities: psync2")
+        :ok
 
-  ## Returns
-    * `{:ok, replica_info()}` - Successfully completed handshake with replica information
-    * `{:error, term()}` - Failed to complete handshake with reason
-  """
-  @spec handle_replica_connection(port()) :: {:ok, replica_info()} | {:error, term()}
-  def handle_replica_connection(socket) do
-    with :ok <- handle_ping(socket),
-         {:ok, replica_info} <- handle_replconf(socket),
-         :ok <- send_fullsync(socket) do
-      Logger.info("Successfully completed handshake with replica", replica_info: replica_info)
-      {:ok, replica_info}
+      _ ->
+        {:error, "ERR Unknown REPLCONF subcommand or wrong number of arguments"}
     end
   end
 
-  @spec handle_ping(port()) :: :ok | {:error, term()}
-  defp handle_ping(socket) do
-    case recv_command(socket) do
-      {:ok, %Redis.Command{command: "PING"}} ->
-        Logger.info("Received PING from replica")
+  def handle_psync(args) do
+    case args do
+      ["?", "-1"] ->
+        # Handle initial sync request
+        replication_id = Redis.Replication.Info.generate_replid()
 
-        case :gen_tcp.send(socket, Protocol.pong()) do
-          :ok -> :ok
-          {:error, reason} -> {:error, reason}
-        end
-
-      other ->
-        Logger.error(unexpected_ping_command: other)
-        {:error, :unexpected_command}
-    end
-  end
-
-  @spec handle_replconf(port()) :: {:ok, replica_info()} | {:error, term()}
-  defp handle_replconf(socket) do
-    replica_info = %{port: nil, capabilities: []}
-
-    # Handle listening-port
-    with {:ok, %Redis.Command{command: "REPLCONF", args: ["listening-port", port]}} <-
-           recv_command(socket),
-         :ok <- :gen_tcp.send(socket, Protocol.ok()),
-         # Handle capabilities
-         {:ok, %Redis.Command{command: "REPLCONF", args: ["capa", "eof", "capa", "psync2"]}} <-
-           recv_command(socket),
-         :ok <- :gen_tcp.send(socket, Protocol.ok()) do
-      replica_info = %{
-        replica_info
-        | port: String.to_integer(port),
-          capabilities: [:eof, :psync2]
-      }
-
-      {:ok, replica_info}
-    else
-      error ->
-        Logger.error(replconf_error: error)
-        {:error, :invalid_replconf}
-    end
-  end
-
-  @spec send_fullsync(port()) :: :ok | {:error, term()}
-  defp send_fullsync(socket) do
-    case recv_command(socket) do
-      {:ok, %Redis.Command{command: "PSYNC", args: ["?", "-1"]}} ->
-        Logger.info("Received initial PSYNC request from replica")
-        replication_id = Info.generate_replid()
-        offset = "0"
-
-        Logger.info("Initiating FULLRESYNC",
-          replication_id: replication_id,
-          offset: offset
+        Logger.info("Initiating multi-response FULLRESYNC for new replica",
+          replication_id: replication_id
         )
 
-        response =
-          Protocol.encode(%Command{
-            command: "FULLRESYNC",
-            args: [replication_id, offset]
-          })
+        MultiResponse.new()
+        |> MultiResponse.add_response(%Command{
+          command: "FULLRESYNC",
+          args: [replication_id, "0"]
+        })
+        |> MultiResponse.add_response(Redis.RDB.File.empty_file_binary())
 
-        case :gen_tcp.send(socket, response) do
-          :ok ->
-            Logger.info("Successfully sent FULLRESYNC response")
-            :ok
+      [replid, offset] when is_binary(replid) and is_binary(offset) ->
+        # For now, we'll always respond with FULLRESYNC
+        # TODO: Implement partial sync when we have replication backlog
+        new_replid = Redis.Replication.Info.generate_replid()
 
-          {:error, reason} = error ->
-            Logger.error("Failed to send FULLRESYNC response", error: reason)
-            error
-        end
+        MultiResponse.new()
+        |> MultiResponse.add_response(%Command{
+          command: "FULLRESYNC",
+          args: [new_replid, "0"]
+        })
+        |> MultiResponse.add_response(Redis.RDB.File.empty_file_binary())
 
-      {:ok, %Redis.Command{command: "PSYNC"} = cmd} ->
-        Logger.error("Received unexpected PSYNC format", command: cmd)
-        {:error, :invalid_psync_format}
-
-      {:ok, other_command} ->
-        Logger.error("Expected PSYNC command but received", command: other_command)
-        {:error, :unexpected_command}
-
-      {:error, reason} = error ->
-        Logger.error("Failed to receive PSYNC command", error: reason)
-        error
-    end
-  end
-
-  @spec recv_command(port()) :: {:ok, Redis.Command.t()} | {:error, term()}
-  defp recv_command(socket) do
-    case :gen_tcp.recv(socket, 0) do
-      {:ok, data} -> Protocol.decode(data)
-      error -> error
+      _ ->
+        {:error, "ERR wrong number of arguments for 'PSYNC' command"}
     end
   end
 end

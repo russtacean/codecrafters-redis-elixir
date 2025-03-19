@@ -30,42 +30,11 @@ defmodule Redis.Commands do
   end
 
   def execute({:ok, %Command{command: "REPLCONF", args: args}}) do
-    case args do
-      ["listening-port", port] ->
-        Logger.info("Received REPLCONF listening-port", port: port)
-        :ok
-
-      ["capa", "eof"] ->
-        Logger.info("Received REPLCONF capabilities: eof")
-        :ok
-
-      ["capa", "psync2"] ->
-        Logger.info("Received REPLCONF capabilities: psync2")
-        :ok
-
-      _ ->
-        {:error, "ERR Unknown REPLCONF subcommand or wrong number of arguments"}
-    end
+    Redis.Replication.Master.handle_replconf(args)
   end
 
   def execute({:ok, %Command{command: "PSYNC", args: args}}) do
-    case args do
-      ["?", "-1"] ->
-        # Handle initial sync request
-        replication_id = Redis.Replication.Info.generate_replid()
-        Logger.info("Initiating FULLRESYNC for new replica", replication_id: replication_id)
-        %Command{command: "FULLRESYNC", args: [replication_id, "0"]}
-
-      [replid, offset] when is_binary(replid) and is_binary(offset) ->
-        # For now, we'll always respond with FULLRESYNC
-        # TODO: Implement partial sync when we have replication backlog
-        new_replid = Redis.Replication.Info.generate_replid()
-        Logger.info("Received PSYNC request", requested_replid: replid, offset: offset)
-        %Command{command: "FULLRESYNC", args: [new_replid, "0"]}
-
-      _ ->
-        {:error, "ERR wrong number of arguments for 'PSYNC' command"}
-    end
+    Redis.Replication.Master.handle_psync(args)
   end
 
   def execute({:ok, %Command{command: "CONFIG", args: args}}) do

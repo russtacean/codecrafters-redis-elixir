@@ -12,7 +12,7 @@ defmodule Redis.Protocol do
   """
   require Logger
   alias Redis.Command
-
+  alias Redis.Protocol.RDB
   @clrf "\r\n"
 
   @doc """
@@ -94,6 +94,12 @@ defmodule Redis.Protocol do
   def encode(list) when is_list(list), do: encode_array(list)
   def encode({:error, reason}), do: encode_simple_error(reason)
   def encode(%Command{} = command), do: encode_command(command)
+
+  def encode(%RDB{binary_value: rdb_data}) do
+    Logger.info(rdb_data: rdb_data)
+    Logger.info(rdb_data: {byte_size(rdb_data), rdb_data})
+    "$#{byte_size(rdb_data)}\r\n#{rdb_data}"
+  end
 
   defp encode_simple_string(atom) when is_atom(atom) do
     msg =

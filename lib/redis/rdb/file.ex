@@ -46,6 +46,16 @@ defmodule Redis.RDB.File do
     db_file
   end
 
+  def empty_file_binary() do
+    # TODO: This is a hack to get the empty file binary to avoid having to create an encoder
+    {:ok, binary} =
+      Base.decode64(
+        "UkVESVMwMDEx+glyZWRpcy12ZXIFNy4yLjD6CnJlZGlzLWJpdHPAQPoFY3RpbWXCbQi8ZfoIdXNlZC1tZW3CsMQQAPoIYW9mLWJhc2XAAP/wbjv+wP9aog=="
+      )
+
+    Redis.Protocol.RDB.new(binary)
+  end
+
   def get_val(db_file, key) do
     Logger.debug(db_file: db_file)
 

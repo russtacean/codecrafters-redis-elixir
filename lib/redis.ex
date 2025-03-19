@@ -2,6 +2,7 @@ defmodule Redis do
   require Logger
 
   alias Redis.Commands
+  alias Redis.MultiResponse
   alias Redis.Protocol
 
   @moduledoc """
@@ -42,8 +43,7 @@ defmodule Redis do
         line
         |> Protocol.decode()
         |> Commands.execute()
-        |> Protocol.encode()
-        |> write_line(client)
+        |> respond(client)
 
         serve(client)
 
@@ -58,5 +58,20 @@ defmodule Redis do
   defp write_line(line, client) do
     Logger.info(sent_message: line)
     :gen_tcp.send(client, line)
+  end
+
+  defp respond(%MultiResponse{} = multi_response, client) do
+    Logger.info(multi_response: multi_response)
+    responses = MultiResponse.read_responses(multi_response)
+
+    Enum.each(responses, fn response -> respond(response, client) end)
+  end
+
+  defp respond(message, client) do
+    Logger.info(pre_encode: message)
+
+    message
+    |> Protocol.encode()
+    |> write_line(client)
   end
 end
