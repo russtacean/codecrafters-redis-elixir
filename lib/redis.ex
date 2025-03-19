@@ -38,10 +38,9 @@ defmodule Redis do
   end
 
   defp serve(client) do
-    case :gen_tcp.recv(client, 0) do
-      {:ok, line} ->
-        line
-        |> Protocol.decode()
+    case Redis.Request.from_client(client) do
+      {:ok, request} ->
+        request
         |> Commands.execute()
         |> respond(client)
 
@@ -53,6 +52,12 @@ defmodule Redis do
       {:error, reason} ->
         Logger.error("Error: #{reason}")
     end
+  end
+
+  def handle_request(request) do
+    request
+    |> Commands.execute()
+    |> respond(request.client)
   end
 
   defp write_line(line, client) do

@@ -8,20 +8,22 @@ defmodule Redis.Replication.Master do
 
   alias Redis.Command
   alias Redis.MultiResponse
+  alias Redis.Replication.Replconf
 
-  def handle_replconf(args) do
+  @spec handle_replconf(Replconf.t(), [String.t()]) :: {:ok, Replconf.t()} | {:error, String.t()}
+  def handle_replconf(replconf, args) do
     case args do
       ["listening-port", port] ->
         Logger.info("Received REPLCONF listening-port", port: port)
-        :ok
+        {:ok, %{replconf | port: String.to_integer(port)}}
 
       ["capa", "eof"] ->
         Logger.info("Received REPLCONF capabilities: eof")
-        :ok
+        {:ok, Replconf.add_capability(replconf, "eof")}
 
       ["capa", "psync2"] ->
         Logger.info("Received REPLCONF capabilities: psync2")
-        :ok
+        {:ok, Replconf.add_capability(replconf, "psync2")}
 
       _ ->
         {:error, "ERR Unknown REPLCONF subcommand or wrong number of arguments"}

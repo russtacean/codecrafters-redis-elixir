@@ -96,8 +96,6 @@ defmodule Redis.Protocol do
   def encode(%Command{} = command), do: encode_command(command)
 
   def encode(%RDB{binary_value: rdb_data}) do
-    Logger.info(rdb_data: rdb_data)
-    Logger.info(rdb_data: {byte_size(rdb_data), rdb_data})
     "$#{byte_size(rdb_data)}\r\n#{rdb_data}"
   end
 

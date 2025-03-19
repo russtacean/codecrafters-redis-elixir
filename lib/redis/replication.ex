@@ -10,13 +10,14 @@ defmodule Redis.Replication do
 
   alias Redis.Replication.Info
   alias Redis.Replication.{Master, Replica}
+  alias Redis.Replication.Replconf
 
   @type role :: :master | :replica
   @type state :: %{
           info: Info.t(),
           role: role(),
-          replicas: %{optional(port()) => Master.replica_info()},
-          master_socket: port() | nil
+          master_socket: port() | nil,
+          replicas: %{port() => Replconf.t()}
         }
 
   @doc """
@@ -36,11 +37,20 @@ defmodule Redis.Replication do
   end
 
   @doc """
-  Handles a new replica connection attempt.
+  Handles a REPLCONF command from a replica.
   """
-  @spec handle_replica_connection(port()) :: :ok | {:error, term()}
-  def handle_replica_connection(socket) do
-    GenServer.call(__MODULE__, {:handle_replica_connection, socket})
+  @spec handle_replconf(port(), [String.t()]) :: {:ok, String.t()} | {:error, String.t()}
+  def handle_replconf(args, client) do
+    GenServer.call(__MODULE__, {:handle_replconf, client, args})
+  end
+
+  @doc """
+  Propagates a command to all connected replicas.
+  """
+  @spec propagate_command(Redis.Command.t()) :: :ok
+  def propagate_command(command) do
+    Logger.info(propagating_command: command)
+    GenServer.cast(__MODULE__, {:propagate_command, command})
   end
 
   @impl true
@@ -54,7 +64,8 @@ defmodule Redis.Replication do
       role: :master,
       # Map of socket -> replica_info
       replicas: %{},
-      master_socket: nil
+      master_socket: nil,
+      replica_configs: %{}
     }
 
     case Redis.Config.get_replicaof() do
@@ -68,8 +79,40 @@ defmodule Redis.Replication do
   end
 
   @impl GenServer
-  def handle_call({:handle_replica_connection, _socket}, _from, state) do
-    {:reply, {:error, :not_master}, state}
+  def handle_call({:handle_replconf, client, args}, _from, state) do
+    case state.role do
+      :master ->
+        replconf = Map.get(state.replicas, client, Replconf.new(nil, []))
+
+        case Master.handle_replconf(replconf, args) do
+          {:ok, updated_replconf} ->
+            new_state = %{
+              state
+              | replicas: Map.put(state.replicas, client, updated_replconf)
+            }
+
+            Logger.info(updated_replconf: updated_replconf)
+
+            {:reply, :ok, new_state}
+
+          {:error, error} ->
+            {:reply, {:error, error}, state}
+        end
+
+      :replica ->
+        {:reply, {:error, "ERR This instance is not a master"}, state}
+    end
+  end
+
+  @impl GenServer
+  def handle_call({:handle_replica_connection, client}, _from, state) do
+    case state.role do
+      :master ->
+        {:reply, {:ok, client}, state}
+
+      :replica ->
+        {:reply, {:error, :not_master}, state}
+    end
   end
 
   @impl GenServer
@@ -83,6 +126,25 @@ defmodule Redis.Replication do
   def handle_cast({:master_connection_established, socket, repl_id, offset}, state) do
     new_info = %{state.info | master_replid: repl_id, master_repl_offset: offset}
     {:noreply, %{state | master_socket: socket, info: new_info}}
+  end
+
+  @impl GenServer
+  def handle_cast({:propagate_command, command}, state) do
+    case state.role do
+      :master ->
+        encoded_command = Redis.Protocol.encode(command)
+
+        Logger.info(replicas: state.replicas)
+
+        Enum.each(state.replicas, fn {socket, _info} ->
+          :gen_tcp.send(socket, encoded_command)
+        end)
+
+        {:noreply, state}
+
+      :replica ->
+        {:noreply, state}
+    end
   end
 
   @spec initiate_replica_handshake(String.t(), integer()) :: :ok

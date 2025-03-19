@@ -5,9 +5,23 @@ defmodule Redis.Commands do
   alias Redis.Storage
   alias Redis.RDB
 
-  def execute({:ok, %Command{command: "PING"}}), do: :pong
+  def execute(%Redis.Request{command: command, client: client}) do
+    handle_command(command, client)
+  end
 
-  def execute({:ok, %Command{command: "GET", args: [key]}}) do
+  def execute({:error, err_atom}) do
+    err_msg =
+      err_atom
+      |> Atom.to_string()
+      |> String.replace("_", " ")
+      |> String.capitalize()
+
+    {:error, err_msg}
+  end
+
+  defp handle_command(%Command{command: "PING"}, _client), do: :pong
+
+  defp handle_command(%Command{command: "GET", args: [key]}, _client) do
     val = Storage.get_val(key)
     Logger.info(storage_get: val)
 
@@ -29,16 +43,15 @@ defmodule Redis.Commands do
     end
   end
 
-  def execute({:ok, %Command{command: "REPLCONF", args: args}}) do
-    Redis.Replication.Master.handle_replconf(args)
+  defp handle_command(%Command{command: "REPLCONF", args: args}, client) do
+    Redis.Replication.handle_replconf(args, client)
   end
 
-  def execute({:ok, %Command{command: "PSYNC", args: args}}) do
+  defp handle_command(%Command{command: "PSYNC", args: args}, _client) do
     Redis.Replication.Master.handle_psync(args)
   end
 
-  def execute({:ok, %Command{command: "CONFIG", args: args}}) do
-    [subcommand | rest] = args
+  defp handle_command(%Command{command: "CONFIG", args: [subcommand | rest]}, _client) do
     Logger.debug(config_subcommand: {subcommand, rest})
 
     case subcommand do
@@ -47,8 +60,7 @@ defmodule Redis.Commands do
     end
   end
 
-  def execute({:ok, %Command{command: "INFO", args: args}}) do
-    [subcommand | rest] = args
+  defp handle_command(%Command{command: "INFO", args: [subcommand | rest]}, _client) do
     Logger.debug(info_subcommand: {subcommand, rest})
 
     case String.upcase(subcommand) do
@@ -62,30 +74,19 @@ defmodule Redis.Commands do
     end
   end
 
-  def execute({:ok, %Command{command: "ECHO", args: [msg]}}), do: msg
+  defp handle_command(%Command{command: "ECHO", args: [msg]}, _client), do: msg
 
-  def execute({:error, err_atom}) do
-    err_msg =
-      err_atom
-      |> Atom.to_string()
-      |> String.replace("_", " ")
-      |> String.capitalize()
+  defp handle_command(%Command{command: "SET", args: args}, client), do: set_command(args, client)
 
-    {:error, err_msg}
-  end
-
-  def execute({:ok, %Command{command: "SET", args: args}}), do: set_command(args)
-
-  def execute({:ok, %Command{command: "KEYS", args: args}}) do
-    [pattern] = args
+  defp handle_command(%Command{command: "KEYS", args: [pattern]}, _client) do
     pattern = String.replace(pattern, "*", ".*")
     Logger.debug(keys_pattern: pattern)
 
     try do
       all_keys = Redis.RDB.keys()
 
-      case args do
-        ["*"] -> all_keys
+      case pattern do
+        "*" -> all_keys
         _ -> Enum.filter(all_keys, &String.match?(&1, ~r/#{pattern}/))
       end
     rescue
@@ -93,13 +94,20 @@ defmodule Redis.Commands do
     end
   end
 
-  defp set_command([key, val]) do
+  # Add catch-all for unknown commands
+  defp handle_command(%Command{command: unknown_command}, _client) do
+    {:error, "Unknown command '#{unknown_command}'"}
+  end
+
+  defp set_command([key, val], _client) do
     Storage.set_val(key, val)
+    Redis.Replication.propagate_command(%Command{command: "SET", args: [key, val]})
     :ok
   end
 
-  defp set_command([key, val, "px", expiry]) do
+  defp set_command([key, val, "px", expiry], _client) do
     Storage.set_val(key, val, String.to_integer(expiry))
+    Redis.Replication.propagate_command(%Command{command: "SET", args: [key, val, "px", expiry]})
     :ok
   end
 
